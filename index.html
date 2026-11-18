@@ -1,0 +1,665 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>坐站測試 AI 即時計數器</title>
+<style>
+:root{
+  --paper:#f2f6f7; --panel:#ffffff; --ink:#13232b; --mute:#5b6e77; --line:#cfdadf;
+  --accent:#0b7285; --accent-ink:#ffffff; --warn:#b4540a; --zone-flex:#e3edf0; --zone-ext:#cdeaf0; --stage:#0c1519;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --paper:#0e171b; --panel:#15222a; --ink:#e4eef2; --mute:#8fa5af; --line:#28404b;
+    --accent:#3cc3dc; --accent-ink:#06222a; --warn:#f0a15a; --zone-flex:#1b2d36; --zone-ext:#16414d; }
+}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);
+  font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  line-height:1.55;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+main{max-width:720px;margin:0 auto;padding:12px 14px 48px}
+h1{font-size:1.2rem;margin:6px 0 2px;font-weight:700;letter-spacing:.02em}
+.sub{margin:0 0 10px;color:var(--mute);font-size:.85rem}
+section{border-top:1px solid var(--line);padding:14px 0}
+section:first-of-type{border-top:0}
+.stage{position:relative;width:100%;margin:0 auto;background:var(--stage);overflow:hidden;aspect-ratio:16/9}
+.stage video,.stage canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+.banner{position:absolute;left:0;right:0;bottom:0;padding:8px 12px;font-size:.95rem;color:#fff;background:rgba(10,20,25,.82)}
+.banner.warn{background:rgba(160,70,8,.92)}
+.banner:empty{display:none}
+.fps{position:absolute;top:6px;right:8px;font-size:.75rem;color:#b9ccd3;font-variant-numeric:tabular-nums}
+.readout{display:grid;grid-template-columns:1fr auto;gap:4px 16px;align-items:end}
+.angle{font-size:clamp(64px,22vw,116px);line-height:.95;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.angle small{font-size:.35em;font-weight:500;color:var(--mute);margin-left:2px}
+.repbox{text-align:right}
+.reps{font-size:clamp(48px,16vw,84px);line-height:.95;font-weight:700;font-variant-numeric:tabular-nums;color:var(--accent)}
+.cap{font-size:.8rem;color:var(--mute)}
+.gauge{grid-column:1 / -1;position:relative;height:30px;margin-top:10px}
+.gauge .track{position:absolute;left:0;right:0;top:12px;height:8px;background:linear-gradient(90deg,var(--zone-flex) 0 var(--f,60%),transparent var(--f,60%) var(--e,80%),var(--zone-ext) var(--e,80%) 100%);border:1px solid var(--line)}
+.gauge .tick{position:absolute;top:6px;width:2px;height:20px;background:var(--mute)}
+.gauge .tick span{position:absolute;top:21px;left:-14px;width:30px;text-align:center;font-size:.68rem;color:var(--mute);font-variant-numeric:tabular-nums}
+.gauge .needle{position:absolute;top:3px;width:4px;height:26px;margin-left:-2px;background:var(--accent);transition:left .08s linear}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+button{font:inherit;min-height:52px;padding:0 14px;border:1px solid var(--ink);background:transparent;color:var(--ink);cursor:pointer;border-radius:4px}
+button:disabled{opacity:.4;cursor:not-allowed}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+button.stop{background:var(--warn);border-color:var(--warn);color:#fff;font-weight:700}
+button:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.wide{grid-column:1 / -1}
+details{border-top:1px solid var(--line);padding:10px 0}
+summary{cursor:pointer;font-weight:700;min-height:36px;display:flex;align-items:center}
+label{display:block;margin:10px 0 4px;font-size:.88rem;color:var(--mute)}
+input[type=text],select{width:100%;min-height:46px;padding:8px 10px;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:4px}
+input[type=range]{width:100%;accent-color:var(--accent);min-height:36px}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.val{color:var(--ink);font-weight:700;font-variant-numeric:tabular-nums}
+.check{display:flex;align-items:center;gap:10px;margin:10px 0;color:var(--ink);font-size:.95rem}
+.check input{width:22px;height:22px;accent-color:var(--accent)}
+.hint{font-size:.82rem;color:var(--mute);margin:6px 0 0}
+ol.tips{margin:6px 0 0;padding-left:1.3em;font-size:.9rem}
+ol.tips li{margin:4px 0}
+.tablewrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:.92rem}
+th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--mute);font-weight:500;font-size:.8rem}
+.summary{display:grid;grid-template-columns:repeat(2,1fr);gap:6px 14px;margin:0 0 10px}
+.summary div{display:flex;justify-content:space-between;border-bottom:1px solid var(--line);padding:4px 0;font-size:.92rem}
+.summary b{font-variant-numeric:tabular-nums}
+.exports{display:grid;grid-template-columns:1fr;gap:8px}
+.legal{font-size:.78rem;color:var(--mute)}
+@media (prefers-reduced-motion:reduce){.gauge .needle{transition:none}}
+</style>
+</head>
+<body>
+<main>
+  <h1>坐站測試 AI 即時計數器</h1>
+  <p class="sub">鏡頭影像只在本機處理，不錄影、不上傳；只輸出角度與次數的 CSV。</p>
+
+  <section>
+    <div class="stage" id="stage">
+      <video id="video" playsinline muted></video>
+      <canvas id="overlay"></canvas>
+      <div class="fps" id="fps"></div>
+      <div class="banner" id="banner">按「開啟鏡頭」開始。</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="readout">
+      <div>
+        <div class="angle"><span id="angle">--</span><small>°</small></div>
+        <div class="cap">膝關節角度（坐姿約 90°，站直約 180°）· <span id="stateLabel">尚未開始</span></div>
+      </div>
+      <div class="repbox">
+        <div class="reps" id="reps">0</div>
+        <div class="cap">站起次數 · <span id="timer">00:00</span></div>
+      </div>
+      <div class="gauge" aria-hidden="true">
+        <div class="track" id="track"></div>
+        <div class="tick" id="tickF"><span id="tickFv"></span></div>
+        <div class="tick" id="tickE"><span id="tickEv"></span></div>
+        <div class="needle" id="needle" style="left:0"></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="actions">
+      <button id="btnCam" class="wide">開啟鏡頭</button>
+      <button id="btnSwitch" disabled>切換前後鏡頭</button>
+      <button id="btnCal" disabled>校準門檻</button>
+      <button id="btnStart" class="primary wide" disabled>開始測試（倒數 3 秒）</button>
+    </div>
+    <p class="hint">校準：按下後 10 秒內，請受測者完整做 1～2 次「坐 → 站直 → 坐」，系統會自動設定門檻。</p>
+  </section>
+
+  <section>
+    <details open>
+      <summary>擺位與安全提示</summary>
+      <ol class="tips">
+        <li>椅子靠牆或固定，使用無扶手、硬背、座高約 43 公分的椅子，腳平放地面。</li>
+        <li>手機固定在受測者側面約 2～3 公尺處，高度約在髖部，讓整個人（頭到腳）入鏡。</li>
+        <li>雙手交叉於胸前。膝角度達到「站直門檻」才算一次站起。</li>
+        <li>工作人員請站在旁邊保護。受測者頭暈、疼痛或不適時，立即停止測試。</li>
+        <li>左右腿以朝向鏡頭較近、較清楚的一側為準，也可手動指定。</li>
+      </ol>
+    </details>
+
+    <details open>
+      <summary>測試模式</summary>
+      <label for="mode">模式</label>
+      <select id="mode">
+        <option value="t30">限時計次：時間到就停止，記錄站起次數</option>
+        <option value="r5">固定次數計時：做完目標次數就停止，記錄用時</option>
+        <option value="free">自由計次：手動按停止</option>
+      </select>
+      <label for="dur">限時模式的秒數：<span class="val" id="durV"></span> 秒</label>
+      <input type="range" id="dur" min="10" max="120" step="5">
+      <label for="target">固定次數模式的目標次數：<span class="val" id="targetV"></span> 次</label>
+      <input type="range" id="target" min="1" max="20" step="1">
+    </details>
+
+    <details open>
+      <summary>受測資料</summary>
+      <label for="pid">受試者代號（不要填真實姓名）</label>
+      <input type="text" id="pid" autocomplete="off" placeholder="例如 P001">
+      <label for="note">備註（會寫入摘要檔）</label>
+      <input type="text" id="note" autocomplete="off" placeholder="例如 第 1 次、使用助行器、無扶手椅">
+      <label for="leg">受測腿</label>
+      <select id="leg">
+        <option value="auto">自動（選較清楚的一側）</option>
+        <option value="L">左腿</option>
+        <option value="R">右腿</option>
+      </select>
+    </details>
+
+    <details>
+      <summary>進階設定</summary>
+      <label for="flex">坐姿門檻：膝角度低於 <span class="val" id="flexV"></span>° 視為坐下</label>
+      <input type="range" id="flex" min="60" max="150" step="1">
+      <label for="ext">站直門檻：膝角度達到 <span class="val" id="extV"></span>° 才算站起</label>
+      <input type="range" id="ext" min="120" max="180" step="1">
+      <label for="hold">站直需維持 <span class="val" id="holdV"></span> 秒才計次</label>
+      <input type="range" id="hold" min="0" max="2" step="0.5">
+      <div class="row2">
+        <div>
+          <label for="rot">畫面旋轉</label>
+          <select id="rot"><option value="0">不旋轉</option><option value="90">順時針 90°</option><option value="270">逆時針 90°</option></select>
+        </div>
+        <div>
+          <label for="model">AI 模型</label>
+          <select id="model"><option value="lite">輕量（較快）</option><option value="full">標準（較準、較慢）</option></select>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" id="beep" checked> 每完成一次發出提示音</label>
+      <label class="check"><input type="checkbox" id="voice"> 語音報數</label>
+    </details>
+  </section>
+
+  <section>
+    <div class="summary" id="summary"></div>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>次</th><th>時間(s)</th><th>坐姿角</th><th>站姿峰值</th><th>起立耗時(s)</th><th>間隔(s)</th></tr></thead>
+        <tbody id="repRows"><tr><td colspan="6" class="cap">尚無紀錄</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="exports">
+      <button id="exFrames" disabled>下載逐幀資料 CSV</button>
+      <button id="exReps" disabled>下載每次站起 CSV</button>
+      <button id="exSummary" disabled>下載測試摘要 CSV</button>
+    </div>
+    <p class="legal">本工具為研究用的影像估測，不是醫療器材，也不是跌倒風險診斷工具，數值未經臨床驗證。正式研究前，請以人工計次與碼表抽樣對照，並依機構規定取得同意與倫理審查。</p>
+  </section>
+</main>
+
+<script type="module">
+import { PoseLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+const APP_VERSION = "1.0-sts";
+const WASM = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm";
+const MODELS = {
+  lite: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
+  full: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task"
+};
+const LEGS = { L: [23, 25, 27], R: [24, 26, 28] };
+const BONES = [[11,12],[11,13],[13,15],[12,14],[14,16],[11,23],[12,24],[23,24],[23,25],[25,27],[24,26],[26,28],[27,29],[29,31],[27,31],[28,30],[30,32],[28,32]];
+const MIN_VIS = 0.4;
+
+// <core>
+function angleAt(a, b, c) {
+  const v1x = a[0] - b[0], v1y = a[1] - b[1], v2x = c[0] - b[0], v2y = c[1] - b[1];
+  const m = Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y);
+  if (!m) return NaN;
+  const d = (v1x * v2x + v1y * v2y) / m;
+  return Math.acos(Math.max(-1, Math.min(1, d))) * 180 / Math.PI;
+}
+// 坐站計次：先在「坐姿」(角度 <= flex)，再達到「站直」(角度 >= ext，並維持 hold 秒) 才算一次。
+function createRepCounter(cfg) {
+  let st, count, reps, t0, lastRepT;
+  const rc = {
+    reset(now) { st = { state: "unk", min: 0, max: 0, riseT: 0, extT: null, last: null }; count = 0; reps = []; t0 = now; lastRepT = now; },
+    get state() { return st.state; },
+    get count() { return count; },
+    get reps() { return reps; },
+    step(ang, now, leg) {
+      let counted = false;
+      const enterSeat = () => { st.state = "flex"; st.min = ang; st.max = ang; st.riseT = now; st.extT = null; st.last = null; };
+      if (st.state === "unk") {
+        if (ang <= cfg.flex) enterSeat(); else if (ang >= cfg.ext) st.state = "ext";
+      } else if (st.state === "ext") {
+        if (ang <= cfg.flex) enterSeat();
+        else if (st.last && ang > st.last.peak) st.last.peak = ang;
+      } else {
+        st.min = Math.min(st.min, ang); st.max = Math.max(st.max, ang);
+        if (ang <= cfg.flex) st.riseT = now;
+        if (ang >= cfg.ext) {
+          if (st.extT == null) st.extT = now;
+          if (now - st.extT >= cfg.hold * 1000) {
+            count++;
+            st.last = { n: count, time: (now - t0) / 1000, leg, min: st.min, peak: st.max, dur: (now - st.riseT) / 1000, gap: (now - lastRepT) / 1000 };
+            lastRepT = now; reps.push(st.last);
+            st.state = "ext"; counted = true;
+          }
+        } else st.extT = null;
+      }
+      return counted;
+    }
+  };
+  rc.reset(0);
+  return rc;
+}
+// </core>
+
+const $ = id => document.getElementById(id);
+const video = $("video"), cv = $("overlay"), ctx = cv.getContext("2d");
+const KEY = "stsCounter.v1";
+const S = { flex: 115, ext: 160, hold: 0, leg: "auto", rot: 0, model: "lite", pid: "", note: "", beep: true, voice: false, mode: "t30", dur: 30, target: 5 };
+try { Object.assign(S, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (e) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) {} };
+
+let landmarker = null, loadedModel = null, stream = null, facing = "environment";
+let running = false, lastVideoT = -1, lastTs = 0, sm = null, curLeg = "L";
+let calMsg = "", poseMsg = "", flashMsg = "", cal = null, actx = null, wakeLock = null, lastBanner = null, cdH = null;
+let fpsT = performance.now(), fpsN = 0, fps = 0;
+const rc = createRepCounter(S);
+const test = { pending: false, active: false, t0: 0, sessionId: "", lines: [], frames: 0, okFrames: 0, endedAt: 0, w: 0, h: 0, done: false, reason: "" };
+let timerH = null;
+
+/* ---------- 介面 ---------- */
+function syncUI() {
+  $("pid").value = S.pid; $("note").value = S.note; $("leg").value = S.leg;
+  $("rot").value = String(S.rot); $("model").value = S.model; $("mode").value = S.mode;
+  $("flex").value = S.flex; $("ext").value = S.ext; $("hold").value = S.hold; $("dur").value = S.dur; $("target").value = S.target;
+  $("flexV").textContent = S.flex; $("extV").textContent = S.ext; $("holdV").textContent = S.hold;
+  $("durV").textContent = S.dur; $("targetV").textContent = S.target;
+  $("beep").checked = S.beep; $("voice").checked = S.voice;
+  const pf = S.flex / 180 * 100, pe = S.ext / 180 * 100;
+  $("track").style.setProperty("--f", pf + "%"); $("track").style.setProperty("--e", pe + "%");
+  $("tickF").style.left = pf + "%"; $("tickE").style.left = pe + "%";
+  $("tickFv").textContent = S.flex; $("tickEv").textContent = S.ext;
+}
+function bindInputs() {
+  const num = (id, key) => $(id).addEventListener("input", e => {
+    S[key] = Number(e.target.value);
+    if (S.ext < S.flex + 15) { if (key === "flex") S.ext = Math.min(180, S.flex + 15); else S.flex = Math.max(60, S.ext - 15); }
+    syncUI(); save(); if (!test.active) renderReps(); else tickTimer();
+  });
+  ["flex", "ext", "hold", "dur", "target"].forEach(k => num(k, k));
+  $("mode").addEventListener("change", e => { S.mode = e.target.value; save(); renderReps(); });
+  $("pid").addEventListener("input", e => { S.pid = e.target.value; save(); });
+  $("note").addEventListener("input", e => { S.note = e.target.value; save(); });
+  $("leg").addEventListener("change", e => { S.leg = e.target.value; save(); });
+  $("rot").addEventListener("change", e => { S.rot = Number(e.target.value); sm = null; save(); });
+  $("beep").addEventListener("change", e => { S.beep = e.target.checked; save(); });
+  $("voice").addEventListener("change", e => { S.voice = e.target.checked; save(); });
+  $("model").addEventListener("change", async e => {
+    S.model = e.target.value; save();
+    if (landmarker) { try { await loadModel(S.model); } catch (err) { setPoseMsg("模型載入失敗：" + err.message); } }
+  });
+}
+function renderBanner() {
+  const msg = calMsg || poseMsg || flashMsg;
+  if (msg === lastBanner) return;
+  lastBanner = msg;
+  const b = $("banner");
+  b.textContent = msg; b.classList.toggle("warn", !!poseMsg && !calMsg);
+}
+function setPoseMsg(m) { poseMsg = m; renderBanner(); }
+function flash(m, ms) { flashMsg = m; renderBanner(); setTimeout(() => { if (flashMsg === m) { flashMsg = ""; renderBanner(); } }, ms || 4000); }
+function fmtTime(s) { s = Math.max(0, Math.floor(s)); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); }
+function showAngle(a) {
+  const ok = a != null && isFinite(a);
+  $("angle").textContent = ok ? Math.round(a) : "--";
+  $("needle").style.left = ok ? Math.max(0, Math.min(100, a / 180 * 100)) + "%" : "0%";
+}
+const STATE_TXT = { unk: "等待動作", flex: "坐姿／起身中", ext: "站立中" };
+function tickTimer() {
+  const el = (performance.now() - test.t0) / 1000;
+  $("timer").textContent = S.mode === "t30" ? "剩 " + Math.max(0, Math.ceil(S.dur - el)) + " 秒" : fmtTime(el);
+}
+function renderReps() {
+  const show = (test.active || test.done) && S.mode === "r5";
+  $("reps").textContent = show ? rc.count + "/" + S.target : rc.count;
+  const rows = rc.reps.slice(-8).reverse().map(r =>
+    `<tr><td>${r.n}</td><td>${r.time.toFixed(1)}</td><td>${r.min.toFixed(0)}°</td><td>${r.peak.toFixed(0)}°</td><td>${r.dur.toFixed(2)}</td><td>${r.gap.toFixed(1)}</td></tr>`).join("");
+  $("repRows").innerHTML = rows || `<tr><td colspan="6" class="cap">尚無紀錄</td></tr>`;
+  renderSummary();
+}
+function stats() {
+  const r = rc.reps, n = r.length;
+  const mean = k => n ? r.reduce((s, x) => s + x[k], 0) / n : NaN;
+  const completion = (S.mode === "r5" && n >= S.target) ? r[S.target - 1].time : (test.endedAt ? (test.endedAt - test.t0) / 1000 : NaN);
+  return { n, meanDur: mean("dur"), meanGap: mean("gap"), meanPeak: mean("peak"), maxPeak: n ? Math.max(...r.map(x => x.peak)) : NaN, completion };
+}
+function renderSummary() {
+  const s = stats(), f = v => isFinite(v) ? v.toFixed(2) : "--";
+  const timeLabel = S.mode === "r5" ? "完成用時" : "測試時間";
+  $("summary").innerHTML =
+    `<div><span>站起次數</span><b>${s.n}</b></div><div><span>${timeLabel}</span><b>${isFinite(s.completion) ? s.completion.toFixed(1) + " s" : "--"}</b></div>` +
+    `<div><span>平均起立耗時</span><b>${f(s.meanDur)} s</b></div><div><span>平均間隔</span><b>${f(s.meanGap)} s</b></div>`;
+}
+
+/* ---------- 模型與鏡頭 ---------- */
+async function loadModel(name) {
+  setPoseMsg("載入 AI 模型中…（需要網路，首次約數 MB）");
+  const fileset = await FilesetResolver.forVisionTasks(WASM);
+  const make = delegate => PoseLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: MODELS[name], delegate },
+    runningMode: "VIDEO", numPoses: 1,
+    minPoseDetectionConfidence: 0.4, minPosePresenceConfidence: 0.4, minTrackingConfidence: 0.4
+  });
+  let next;
+  try { next = await make("GPU"); } catch (e) { next = await make("CPU"); }
+  if (landmarker) { try { landmarker.close(); } catch (e) {} }
+  landmarker = next; loadedModel = name; lastTs = 0;
+  setPoseMsg("");
+}
+function layout() {
+  const W = video.videoWidth, H = video.videoHeight;
+  cv.width = W; cv.height = H;
+  const st = $("stage");
+  st.style.aspectRatio = W + "/" + H;
+  st.style.maxWidth = `calc(62vh * ${W / H})`;
+}
+async function startCam() {
+  if (!window.isSecureContext && location.protocol !== "file:") { setPoseMsg("此網址不是 https，瀏覽器會封鎖鏡頭。請改用 https 網址開啟。"); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setPoseMsg("此瀏覽器不支援鏡頭存取，請改用 Chrome。"); return; }
+  $("btnCam").disabled = true;
+  try {
+    stopStream();
+    setPoseMsg("要求鏡頭權限中…");
+    stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: facing }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    video.srcObject = stream;
+    await new Promise(res => { if (video.readyState >= 1) res(); else video.onloadedmetadata = () => res(); });
+    await video.play();
+    layout();
+    if (!landmarker) await loadModel(S.model);
+    try { if (navigator.wakeLock) wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {}
+    setPoseMsg("");
+    running = true; lastVideoT = -1;
+    $("btnCam").textContent = "關閉鏡頭";
+    ["btnSwitch", "btnCal", "btnStart"].forEach(id => $(id).disabled = false);
+    requestAnimationFrame(loop);
+  } catch (err) {
+    const denied = err && (err.name === "NotAllowedError" || err.name === "SecurityError");
+    setPoseMsg(denied ? "鏡頭被拒絕。請在瀏覽器網址列左側的設定中允許使用相機，再重新整理。" : "啟動失敗：" + (err.message || err.name));
+    stopStream();
+  } finally { $("btnCam").disabled = false; }
+}
+function stopStream() {
+  running = false;
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  video.srcObject = null;
+  if (wakeLock) { try { wakeLock.release(); } catch (e) {} wakeLock = null; }
+  ctx.clearRect(0, 0, cv.width, cv.height);
+}
+function closeCam() {
+  if (test.pending) cancelCountdown();
+  if (test.active) stopTest("manual");
+  stopStream(); sm = null; showAngle(null);
+  $("btnCam").textContent = "開啟鏡頭";
+  ["btnSwitch", "btnCal", "btnStart"].forEach(id => $(id).disabled = true);
+  setPoseMsg("鏡頭已關閉。");
+}
+
+/* ---------- 逐幀處理 ---------- */
+const off = document.createElement("canvas"), octx = off.getContext("2d");
+function getInput(W, H) {
+  if (S.rot === 0) return { input: video, rw: W, rh: H };
+  if (off.width !== H || off.height !== W) { off.width = H; off.height = W; }
+  if (S.rot === 90) octx.setTransform(0, 1, -1, 0, H, 0); else octx.setTransform(0, -1, 1, 0, 0, W);
+  octx.drawImage(video, 0, 0, W, H);
+  octx.setTransform(1, 0, 0, 1, 0, 0);
+  return { input: off, rw: H, rh: W };
+}
+function toSrc(l, rw, rh, W, H) {
+  const x = l.x * rw, y = l.y * rh;
+  if (S.rot === 0) return [x, y];
+  if (S.rot === 90) return [y, H - x];
+  return [W - y, x];
+}
+function pickLeg(pts) {
+  if (S.leg === "L" || S.leg === "R") { curLeg = S.leg; return curLeg; }
+  const vis = k => Math.min(...LEGS[k].map(i => pts[i].v));
+  const other = curLeg === "L" ? "R" : "L";
+  if (vis(other) > vis(curLeg) + 0.15) curLeg = other;
+  return curLeg;
+}
+function loop() {
+  if (!running) return;
+  if (video.readyState >= 2 && video.currentTime !== lastVideoT) { lastVideoT = video.currentTime; try { processFrame(); } catch (e) { console.error(e); } }
+  requestAnimationFrame(loop);
+}
+function processFrame() {
+  const W = video.videoWidth, H = video.videoHeight;
+  if (!W || !landmarker) return;
+  if (cv.width !== W || cv.height !== H) layout();
+  const { input, rw, rh } = getInput(W, H);
+  let ts = performance.now(); if (ts <= lastTs) ts = lastTs + 1; lastTs = ts;
+  const res = landmarker.detectForVideo(input, ts);
+  fpsN++; if (ts - fpsT > 1000) { fps = fpsN * 1000 / (ts - fpsT); fpsN = 0; fpsT = ts; $("fps").textContent = fps.toFixed(0) + " fps"; }
+  ctx.clearRect(0, 0, W, H);
+  if (test.active && S.mode === "t30" && ts - test.t0 >= S.dur * 1000) stopTest("time", test.t0 + S.dur * 1000);
+  if (test.active) { test.frames++; test.w = W; test.h = H; }
+  const lm = res.landmarks && res.landmarks[0];
+  if (!lm) { sm = null; showAngle(null); setPoseMsg("找不到人體。請確認受測者整個人入鏡、光線足夠。"); logFrame(ts, curLeg, NaN, null, null, null, 0, false); return; }
+  const pts = lm.map(l => { const [x, y] = toSrc(l, rw, rh, W, H); return { x, y, v: l.visibility == null ? 0 : l.visibility }; });
+  const leg = pickLeg(pts);
+  const [h, k, a] = LEGS[leg].map(i => pts[i]);
+  const vmin = Math.min(h.v, k.v, a.v);
+  const ok = vmin >= MIN_VIS;
+  if (ok) {
+    const raw = angleAt([h.x, h.y], [k.x, k.y], [a.x, a.y]);
+    sm = (sm == null) ? raw : sm * 0.4 + raw * 0.6;
+    setPoseMsg("");
+  } else { sm = null; setPoseMsg("看不清楚" + (leg === "L" ? "左" : "右") + "腿的髖、膝、踝。請調整擺位或光線。"); }
+  showAngle(sm);
+  drawPose(pts, leg, sm, ok, W, H);
+  if (ok && cal) updateCal(sm, ts);
+  if (test.active) {
+    if (ok) {
+      test.okFrames++;
+      if (rc.step(sm, ts, leg)) onRep();
+    }
+    if (test.active) $("stateLabel").textContent = STATE_TXT[rc.state] || "";
+    logFrame(ts, leg, ok ? sm : NaN, h, k, a, vmin, ok);
+  } else if (!cal && !test.pending && !test.done) $("stateLabel").textContent = "預覽中";
+}
+
+/* ---------- 繪圖 ---------- */
+function drawPose(pts, leg, ang, ok, W, H) {
+  const lw = Math.max(3, W / 280);
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.lineWidth = lw * 0.7; ctx.strokeStyle = "rgba(255,255,255,.4)";
+  for (const [i, j] of BONES) {
+    if (pts[i].v < 0.3 || pts[j].v < 0.3) continue;
+    ctx.beginPath(); ctx.moveTo(pts[i].x, pts[i].y); ctx.lineTo(pts[j].x, pts[j].y); ctx.stroke();
+  }
+  const [hi, ki, ai] = LEGS[leg]; const h = pts[hi], k = pts[ki], a = pts[ai];
+  const col = ok ? "#3cc3dc" : "#f0a15a";
+  ctx.strokeStyle = col; ctx.lineWidth = lw * 1.5;
+  ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.lineTo(k.x, k.y); ctx.lineTo(a.x, a.y); ctx.stroke();
+  ctx.fillStyle = col;
+  for (const p of [h, k, a]) { ctx.beginPath(); ctx.arc(p.x, p.y, lw * 2.2, 0, Math.PI * 2); ctx.fill(); }
+  if (!ok || ang == null || !isFinite(ang)) return;
+  const a1 = Math.atan2(h.y - k.y, h.x - k.x), a2 = Math.atan2(a.y - k.y, a.x - k.x);
+  let diff = a2 - a1; while (diff > Math.PI) diff -= 2 * Math.PI; while (diff <= -Math.PI) diff += 2 * Math.PI;
+  const r = Math.max(24, W / 14);
+  ctx.lineWidth = lw; ctx.strokeStyle = "#ffffff";
+  ctx.beginPath(); ctx.arc(k.x, k.y, r, a1, a1 + diff, diff < 0); ctx.stroke();
+  const u1 = [Math.cos(a1), Math.sin(a1)], u2 = [Math.cos(a2), Math.sin(a2)];
+  let bx = u1[0] + u2[0], by = u1[1] + u2[1]; const bl = Math.hypot(bx, by);
+  if (bl < 0.2) { bx = -u1[1]; by = u1[0]; } else { bx /= bl; by /= bl; }
+  const fs = Math.round(W / 22); ctx.font = `700 ${fs}px system-ui, sans-serif`;
+  const txt = Math.round(ang) + "°"; const tw = ctx.measureText(txt).width;
+  let lx = k.x + bx * r * 1.9, ly = k.y + by * r * 1.9;
+  lx = Math.max(tw / 2 + 8, Math.min(W - tw / 2 - 8, lx)); ly = Math.max(fs, Math.min(H - fs / 2, ly));
+  ctx.fillStyle = "rgba(8,18,22,.78)"; ctx.fillRect(lx - tw / 2 - 8, ly - fs * 0.85, tw + 16, fs * 1.2);
+  ctx.fillStyle = "#ffffff"; ctx.textAlign = "center"; ctx.textBaseline = "alphabetic"; ctx.fillText(txt, lx, ly);
+}
+
+/* ---------- 校準 ---------- */
+const CAL_S = 10;
+function startCal() {
+  if (test.active || test.pending) return;
+  cal = { t0: performance.now(), min: 999, max: -1 };
+  $("btnCal").disabled = true; $("btnStart").disabled = true;
+  calMsg = "校準中：請完成 1～2 次「坐 → 站直 → 坐」（" + CAL_S + " 秒）";
+  renderBanner();
+}
+function updateCal(a, now) {
+  cal.min = Math.min(cal.min, a); cal.max = Math.max(cal.max, a);
+  const left = Math.ceil(CAL_S - (now - cal.t0) / 1000);
+  calMsg = "校準中：請完成 1～2 次「坐 → 站直 → 坐」（剩 " + Math.max(left, 0) + " 秒）";
+  renderBanner();
+  if (now - cal.t0 >= CAL_S * 1000) finishCal();
+}
+function finishCal() {
+  const range = cal.max - cal.min;
+  if (range < 30) {
+    calMsg = ""; flash("活動範圍只有 " + Math.max(range, 0).toFixed(0) + "°，太小無法校準。請確認整個人入鏡並完整站起，或在進階設定手動調整門檻。", 8000);
+  } else {
+    S.flex = Math.max(60, Math.min(150, Math.round(cal.min + range * 0.25)));
+    S.ext = Math.max(120, Math.min(180, Math.round(cal.max - range * 0.15)));
+    if (S.ext < S.flex + 15) S.ext = Math.min(180, S.flex + 15);
+    calMsg = ""; syncUI(); save();
+    flash(`校準完成：坐姿門檻 ${S.flex}°，站直門檻 ${S.ext}°`, 5000);
+  }
+  cal = null; $("btnCal").disabled = false; $("btnStart").disabled = false;
+  renderBanner();
+}
+
+/* ---------- 測試與紀錄 ---------- */
+function stamp(d) { const p = n => String(n).padStart(2, "0"); return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds()); }
+function beep(freq, sec) {
+  if (!actx) return;
+  try { const o = actx.createOscillator(), g = actx.createGain(); o.frequency.value = freq; g.gain.value = 0.15; o.connect(g); g.connect(actx.destination); o.start(); o.stop(actx.currentTime + sec); } catch (e) {}
+}
+function speak(t) { if (S.voice && "speechSynthesis" in window) { try { const u = new SpeechSynthesisUtterance(t); u.lang = "zh-TW"; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch (e) {} } }
+function setStartButton(mode) {
+  const b = $("btnStart");
+  b.classList.toggle("primary", mode === "idle"); b.classList.toggle("stop", mode !== "idle");
+  b.textContent = mode === "idle" ? "開始測試（倒數 3 秒）" : mode === "count" ? "取消倒數" : "停止測試";
+}
+function startCountdown() {
+  if (!running || test.pending || test.active) return;
+  try { if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === "suspended") actx.resume(); } catch (e) {}
+  test.pending = true; test.done = false;
+  $("btnCal").disabled = true; $("btnSwitch").disabled = true;
+  setStartButton("count");
+  let n = 3;
+  const tick = () => {
+    if (!test.pending) return;
+    if (n > 0) { calMsg = "準備：" + n + "（請坐好，雙手交叉於胸前）"; renderBanner(); beep(660, 0.1); speak(String(n)); n--; cdH = setTimeout(tick, 1000); }
+    else { calMsg = ""; renderBanner(); beep(990, 0.3); speak("開始"); beginTest(); }
+  };
+  tick();
+}
+function cancelCountdown() {
+  clearTimeout(cdH); test.pending = false; calMsg = ""; renderBanner();
+  setStartButton("idle"); $("btnCal").disabled = !running; $("btnSwitch").disabled = !running;
+}
+function beginTest() {
+  test.pending = false;
+  const now = performance.now();
+  rc.reset(now);
+  Object.assign(test, { active: true, t0: now, sessionId: stamp(new Date()), lines: [], frames: 0, okFrames: 0, endedAt: 0, done: false, reason: "" });
+  setStartButton("run");
+  ["exFrames", "exReps", "exSummary"].forEach(id => $(id).disabled = true);
+  $("stateLabel").textContent = STATE_TXT.unk;
+  renderReps(); tickTimer();
+  clearInterval(timerH);
+  timerH = setInterval(() => {
+    if (!test.active) return;
+    if (S.mode === "t30" && performance.now() - test.t0 >= S.dur * 1000) { stopTest("time", test.t0 + S.dur * 1000); return; }
+    tickTimer();
+  }, 200);
+}
+function stopTest(reason, endAt) {
+  if (!test.active) return;
+  test.active = false; test.done = true; test.reason = reason || "manual";
+  test.endedAt = endAt || performance.now();
+  clearInterval(timerH);
+  setStartButton("idle");
+  $("btnCal").disabled = !running; $("btnSwitch").disabled = !running;
+  const s = stats();
+  $("timer").textContent = S.mode === "r5" && isFinite(s.completion) && test.reason === "target" ? s.completion.toFixed(1) + " 秒" : (test.reason === "time" ? "時間到" : fmtTime((test.endedAt - test.t0) / 1000));
+  $("stateLabel").textContent = "測試結束";
+  ["exFrames", "exReps", "exSummary"].forEach(id => $(id).disabled = false);
+  renderReps();
+  if (test.reason === "time") { beep(440, 0.6); speak("時間到"); flash("時間到：共站起 " + rc.count + " 次", 10000); }
+  else if (test.reason === "target") { beep(440, 0.6); speak("完成"); flash("完成 " + S.target + " 次，用時 " + s.completion.toFixed(1) + " 秒", 10000); }
+  else flash("測試已停止：共站起 " + rc.count + " 次", 6000);
+}
+function onRep() {
+  renderReps();
+  if (S.beep) beep(880, 0.12);
+  speak(String(rc.count));
+  if (S.mode === "r5" && rc.count >= S.target) stopTest("target");
+}
+function logFrame(ts, leg, ang, h, k, a, vmin, ok) {
+  if (!test.active) return;
+  const r = v => (v == null || !isFinite(v)) ? "" : v.toFixed(1);
+  test.lines.push([
+    test.frames, ((ts - test.t0) / 1000).toFixed(3), leg, r(ang),
+    h ? r(h.x) : "", h ? r(h.y) : "", k ? r(k.x) : "", k ? r(k.y) : "", a ? r(a.x) : "", a ? r(a.y) : "",
+    vmin ? vmin.toFixed(2) : "", ok ? 1 : 0, rc.state, rc.count
+  ].join(","));
+}
+
+/* ---------- 匯出 ---------- */
+function esc(v) { v = String(v == null ? "" : v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+function safe(s) { return (s || "").replace(/[^\w\-]+/g, "_").slice(0, 40) || "unnamed"; }
+function download(name, text) {
+  const blob = new Blob(["\ufeff" + text], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+const fname = kind => `${safe(S.pid)}_${test.sessionId}_sts_${kind}.csv`;
+function exportFrames() {
+  const head = "participant_id,session_id,frame,time_s,leg,knee_angle_deg,hip_x_px,hip_y_px,knee_x_px,knee_y_px,ankle_x_px,ankle_y_px,min_visibility,tracking_ok,state,rep_count";
+  const pre = esc(S.pid) + "," + test.sessionId + ",";
+  download(fname("frames"), head + "\n" + test.lines.map(l => pre + l).join("\n"));
+}
+function exportReps() {
+  const head = "participant_id,session_id,rep,time_s,leg,seated_min_angle_deg,stand_peak_angle_deg,stand_duration_s,interval_s";
+  const rows = rc.reps.map(r => [esc(S.pid), test.sessionId, r.n, r.time.toFixed(2), r.leg, r.min.toFixed(1), r.peak.toFixed(1), r.dur.toFixed(2), r.gap.toFixed(2)].join(","));
+  download(fname("reps"), head + "\n" + rows.join("\n"));
+}
+function exportSummary() {
+  const s = stats(), dur = (test.endedAt - test.t0) / 1000, f = v => isFinite(v) ? v.toFixed(2) : "";
+  const kv = [
+    ["participant_id", S.pid], ["session_id", test.sessionId], ["note", S.note], ["app_version", APP_VERSION],
+    ["test_mode", S.mode], ["time_limit_s", S.mode === "t30" ? S.dur : ""], ["target_reps", S.mode === "r5" ? S.target : ""],
+    ["stop_reason", test.reason], ["completed_reps", s.n], ["completion_time_s", f(s.completion)], ["recorded_duration_s", dur.toFixed(1)],
+    ["mean_stand_duration_s", f(s.meanDur)], ["mean_interval_s", f(s.meanGap)], ["mean_stand_peak_angle_deg", f(s.meanPeak)], ["max_stand_peak_angle_deg", f(s.maxPeak)],
+    ["seated_threshold_deg", S.flex], ["stand_threshold_deg", S.ext], ["hold_required_s", S.hold],
+    ["leg_setting", S.leg], ["rotation_deg", S.rot], ["model", loadedModel], ["camera_facing", facing],
+    ["video_resolution", test.w + "x" + test.h], ["avg_processing_fps", (test.frames / Math.max(dur, 0.001)).toFixed(1)],
+    ["valid_frame_ratio", test.frames ? (test.okFrames / test.frames).toFixed(3) : ""]
+  ];
+  download(fname("summary"), "key,value\n" + kv.map(([k, v]) => esc(k) + "," + esc(v)).join("\n"));
+}
+
+/* ---------- 事件 ---------- */
+$("btnCam").addEventListener("click", () => { if (stream) closeCam(); else startCam(); });
+$("btnSwitch").addEventListener("click", async () => { facing = facing === "environment" ? "user" : "environment"; await startCam(); });
+$("btnCal").addEventListener("click", startCal);
+$("btnStart").addEventListener("click", () => { if (test.active) stopTest("manual"); else if (test.pending) cancelCountdown(); else startCountdown(); });
+$("exFrames").addEventListener("click", exportFrames);
+$("exReps").addEventListener("click", exportReps);
+$("exSummary").addEventListener("click", exportSummary);
+document.addEventListener("visibilitychange", async () => {
+  if (document.visibilityState === "visible" && stream && navigator.wakeLock && !wakeLock) { try { wakeLock = await navigator.wakeLock.request("screen"); } catch (e) {} }
+});
+
+syncUI(); bindInputs(); renderReps(); showAngle(null);
+</script>
+</body>
+</html>
